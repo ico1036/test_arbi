@@ -6,7 +6,7 @@
 uv sync                                         # 설치
 uv run python -m polyarb                        # 실시간 스캔 (WebSocket)
 uv run python -m polyarb paper --mode moderate  # 페이퍼 트레이딩 (프리셋)
-uv run python -m polyarb dashboard              # 웹 대시보드
+uv run python run_dashboard.py                  # 웹 대시보드
 uv run pytest                                   # 테스트 (88개)
 ```
 
@@ -152,8 +152,8 @@ uv run python -m polyarb paper --balance 10000 --size 100 --failure-rate 0.15
 
 ### 웹 대시보드
 ```bash
-uv run python -m polyarb dashboard              # http://localhost:8080
-uv run python -m polyarb dashboard --port 3000  # 포트 변경
+uv run python run_dashboard.py              # http://localhost:8080
+uv run python run_dashboard.py --port 3000  # 포트 변경
 ```
 
 ## 알림 설정 (.env)

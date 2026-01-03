@@ -303,12 +303,6 @@ async def run_paper_trading(args):
 async def main_async():
     args = parse_args()
 
-    # Dashboard mode
-    if args.command == "dashboard":
-        from .dashboard import run_dashboard
-        run_dashboard(port=args.port)
-        return
-
     # Paper trading mode
     if args.command == "paper":
         await run_paper_trading(args)
@@ -332,6 +326,15 @@ async def main_async():
 
 def main():
     """Entry point"""
+    # Parse args first to check for dashboard command
+    args = parse_args()
+
+    # Dashboard runs its own event loop (NiceGUI)
+    if args.command == "dashboard":
+        from .dashboard import run_dashboard
+        run_dashboard(port=args.port)
+        return
+
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:

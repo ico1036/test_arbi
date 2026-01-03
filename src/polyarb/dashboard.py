@@ -282,7 +282,12 @@ def run_dashboard(mode: str = "moderate", port: int = 8080):
     print(f"\n  Dashboard starting at http://localhost:{port}")
     print("  Press Ctrl+C to stop\n")
 
-    ui.run(port=port, title="Polymarket Paper Trading", reload=False)
+    ui.run(
+        port=port,
+        title="Polymarket Paper Trading",
+        reload=False,
+        show=False,  # Don't auto-open browser
+    )
 
 
 def main():
