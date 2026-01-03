@@ -3,11 +3,9 @@
 ## Quick Start (30초)
 
 ```bash
-# 설치
-uv sync
-
-# 실행 (1회 스캔)
-PYTHONPATH=src uv run python -m polyarb --once
+uv sync                              # 설치
+uv run python -m polyarb --once      # 1회 스캔
+uv run pytest                        # 테스트 (78개)
 ```
 
 **출력 예시:**
@@ -26,11 +24,7 @@ PYTHONPATH=src uv run python -m polyarb --once
 ```
 
 ```bash
-# 연속 모니터링 (10초 간격)
-PYTHONPATH=src uv run python -m polyarb --interval 10
-
-# 테스트 (78개)
-PYTHONPATH=src uv run pytest
+uv run python -m polyarb --interval 10   # 연속 모니터링 (10초 간격)
 ```
 
 ## 핵심 개념
