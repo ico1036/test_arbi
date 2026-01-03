@@ -12,7 +12,10 @@ This is a **Polymarket Arbitrage Detection System v3.0** - a high-performance qu
 ### Core Concepts
 
 #### 1. Binary Arbitrage (Single Condition)
-YES and NO shares always settle to exactly $1.00 combined. When `YES + NO < $1.00`, guaranteed profit exists.
+YES and NO shares always settle to exactly $1.00 combined. Two strategies exist:
+
+**UNDERPRICED (YES_ask + NO_ask < $1.00):**
+Buy both at market, merge to redeem $1.00.
 
 ```
 Example:
@@ -21,6 +24,18 @@ Example:
   ─────────────────
   Total:   $0.94
   Profit:  $0.06 (6.38% risk-free return)
+```
+
+**OVERPRICED (YES_bid + NO_bid > $1.00):**
+Mint YES+NO pair for $1.00 via CTF Exchange, sell both at market.
+
+```
+Example:
+  YES bid: $0.55
+  NO bid:  $0.52
+  ─────────────────
+  Total:   $1.07
+  Profit:  $0.07 (7.00% risk-free return)
 ```
 
 #### 2. NegRisk Arbitrage (Multi-Outcome)
@@ -51,7 +66,7 @@ polymarket_arbi/
 │   │   ├── clob.py                  # Price/orderbook (parallel 50 req)
 │   │   └── websocket.py             # Real-time streaming
 │   ├── strategies/
-│   │   ├── binary_arb.py            # YES + NO < $1 detection
+│   │   ├── binary_arb.py            # Binary arbitrage (underpriced + overpriced)
 │   │   └── negrisk_arb.py           # Event-based NegRisk detection
 │   ├── scanner.py                   # Unified scanner
 │   ├── alerts.py                    # Discord/Telegram
@@ -59,11 +74,16 @@ polymarket_arbi/
 │   ├── config.py                    # Configuration
 │   └── main.py                      # CLI entry point
 │
-├── polymarket_arbitrage_bot_v2.py   # v2.0 - Sync (legacy)
-├── polymarket_arbitrage_bot.py      # v1.0 - Basic (legacy)
-├── analyze_opportunities.py         # Statistical analysis tool
+├── tests/                           # Test suite (78 tests)
+│   ├── conftest.py                  # Fixtures & MockCLOBClient
+│   ├── test_models.py               # Data model tests
+│   ├── test_binary_arbitrage.py     # Binary strategy tests
+│   ├── test_negrisk_arbitrage.py    # NegRisk strategy tests
+│   └── test_edge_cases.py           # Edge case tests
+│
 ├── README.md                        # Documentation
 ├── CLAUDE.md                        # This file - AI context
+├── pyproject.toml                   # Project dependencies (uv)
 ├── .mcp.json                        # MCP server configuration
 ├── .env                             # Environment variables (create this)
 └── arbitrage_opportunities.csv      # Auto-generated log file
@@ -282,8 +302,12 @@ order = client.create_and_post_order(
 - [x] Gamma API integration
 - [x] CLOB order book parsing
 - [x] Arbitrage calculation engine
+  - [x] Binary UNDERPRICED (YES_ask + NO_ask < $1)
+  - [x] Binary OVERPRICED (YES_bid + NO_bid > $1)
+  - [x] NegRisk UNDERPRICED (sum of YES < $1)
 - [x] Discord/Telegram alerts
 - [x] CSV logging
+- [x] Comprehensive test suite (78 tests)
 
 ### Phase 2: Analysis (🔄 In Progress)
 - [ ] Historical opportunity tracking
@@ -337,10 +361,10 @@ python -c "import requests; r=requests.get('https://clob.polymarket.com/markets'
 
 | File | Purpose |
 |------|---------|
-| `polymarket_arbitrage_bot.py` | v1.0 - Basic arbitrage detection |
-| `polymarket_arbitrage_bot_v2.py` | v2.0 - Enhanced with alerts & logging |
-| `analyze_opportunities.py` | Statistical analysis tool for quants |
-| `QUICKSTART.md` | Trader's quick-start guide |
+| `src/polyarb/` | v3.0 - Async high-performance implementation |
+| `src/polyarb/strategies/binary_arb.py` | Binary arbitrage (underpriced + overpriced) |
+| `src/polyarb/strategies/negrisk_arb.py` | NegRisk multi-outcome arbitrage |
+| `tests/` | Comprehensive test suite (78 tests) |
 | `CLAUDE.md` | This file - AI context document |
 | `README.md` | Original documentation (Korean) |
 | `pyproject.toml` | Project dependencies (uv) |
@@ -354,16 +378,14 @@ python -c "import requests; r=requests.get('https://clob.polymarket.com/markets'
 # Setup
 uv sync
 
-# v3.0 (Recommended) - 45x faster
+# v3.0 - Async high-performance (45x faster)
 PYTHONPATH=src uv run python -m polyarb --once              # Single scan
 PYTHONPATH=src uv run python -m polyarb --interval 10       # Continuous
 PYTHONPATH=src uv run python -m polyarb --min-profit 3      # 3%+ only
 
-# v2.0 (Legacy)
-uv run python polymarket_arbitrage_bot_v2.py --once
-
-# Statistical analysis
-uv run python analyze_opportunities.py --top 20
+# Run tests
+PYTHONPATH=src uv run pytest                                # All 78 tests
+PYTHONPATH=src uv run pytest tests/test_binary_arbitrage.py # Binary tests only
 ```
 
 ## ⚠️ Key Risk Factors (Paper-based)
@@ -379,3 +401,4 @@ uv run python analyze_opportunities.py --top 20
 
 *Last updated: 2025-01-03*
 *v3.0 - Async architecture with 45.9x speed improvement*
+*Phase 1 complete: Binary (underpriced + overpriced) & NegRisk detection*

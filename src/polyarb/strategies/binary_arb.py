@@ -1,6 +1,9 @@
 """
 Binary Arbitrage Strategy
-Detects when YES + NO < $1.00 in binary markets
+
+Detects arbitrage opportunities in binary markets:
+1. UNDERPRICED: YES + NO < $1.00 → Buy both, merge for $1
+2. OVERPRICED:  YES + NO > $1.00 → Mint pair for $1, sell both
 """
 import asyncio
 from typing import List, Optional
@@ -14,16 +17,27 @@ from ..config import config
 
 class BinaryArbitrageStrategy(Strategy):
     """
-    Classic binary market arbitrage.
+    Binary market arbitrage detection.
 
-    When YES ask + NO ask < $1.00, buying both guarantees profit.
-    Settlement always pays exactly $1.00 for one outcome.
+    Two strategies:
 
-    Example:
-        YES ask: $0.48
-        NO ask:  $0.46
-        Total:   $0.94
-        Profit:  $0.06 (6.38%)
+    1. UNDERPRICED (YES + NO < $1.00):
+       - Buy YES and NO at market
+       - Merge to redeem $1.00
+       - Profit = $1.00 - (YES + NO)
+
+       Example:
+         YES ask: $0.48, NO ask: $0.46
+         Total: $0.94, Profit: $0.06 (6.38%)
+
+    2. OVERPRICED (YES + NO > $1.00):
+       - Mint YES+NO pair for $1.00 (via CTF Exchange)
+       - Sell both at market
+       - Profit = (YES + NO) - $1.00
+
+       Example:
+         YES bid: $0.55, NO bid: $0.52
+         Total: $1.07, Profit: $0.07 (6.54%)
     """
 
     def __init__(
@@ -41,7 +55,11 @@ class BinaryArbitrageStrategy(Strategy):
         return "binary_arbitrage"
 
     async def analyze(self, market: Market) -> Optional[ArbitrageOpportunity]:
-        """Analyze a single binary market"""
+        """
+        Analyze a single binary market for both underpriced and overpriced opportunities.
+
+        Returns the first opportunity found (underpriced checked first).
+        """
         # Must be binary market with exactly 2 tokens
         if market.market_type != MarketType.BINARY or len(market.tokens) != 2:
             return None
@@ -49,42 +67,57 @@ class BinaryArbitrageStrategy(Strategy):
         yes_token = market.tokens[0]
         no_token = market.tokens[1]
 
-        # Get best ask prices concurrently
+        # Check for UNDERPRICED first (YES + NO < $1)
+        opp = await self._check_underpriced(market, yes_token, no_token)
+        if opp:
+            return opp
+
+        # Check for OVERPRICED (YES + NO > $1)
+        opp = await self._check_overpriced(market, yes_token, no_token)
+        if opp:
+            return opp
+
+        return None
+
+    async def _check_underpriced(
+        self, market: Market, yes_token, no_token
+    ) -> Optional[ArbitrageOpportunity]:
+        """
+        Check for underpriced opportunity: YES_ask + NO_ask < $1.00
+        Strategy: Buy both at ask, merge for $1.00
+        """
+        # Get best ask prices (what we pay to buy)
         prices = await self.clob.get_prices_batch(
             [yes_token.token_id, no_token.token_id], side="buy"
         )
 
-        yes_price = prices.get(yes_token.token_id)
-        no_price = prices.get(no_token.token_id)
+        yes_ask = prices.get(yes_token.token_id)
+        no_ask = prices.get(no_token.token_id)
 
-        # Need both prices
-        if yes_price is None or no_price is None:
+        if yes_ask is None or no_ask is None:
+            return None
+        if yes_ask <= 0 or no_ask <= 0:
             return None
 
-        if yes_price <= 0 or no_price <= 0:
-            return None
+        total_cost = yes_ask + no_ask
 
-        # Calculate arbitrage
-        total_cost = yes_price + no_price
-
-        # No arbitrage if total >= $1
+        # Need total < $1 for underpriced arbitrage
         if total_cost >= 1.0:
             return None
 
         profit = 1.0 - total_cost
         profit_percent = (profit / total_cost) * 100
 
-        # Check thresholds
         if not self.meets_thresholds(
             profit_percent, market.liquidity, self.min_profit, self.min_liquidity
         ):
             return None
 
         # Update token prices
-        yes_token.price = yes_price
-        yes_token.best_ask = yes_price
-        no_token.price = no_price
-        no_token.best_ask = no_price
+        yes_token.price = yes_ask
+        yes_token.best_ask = yes_ask
+        no_token.price = no_ask
+        no_token.best_ask = no_ask
 
         return ArbitrageOpportunity(
             market_id=market.market_id,
@@ -95,6 +128,63 @@ class BinaryArbitrageStrategy(Strategy):
             arb_type=ArbitrageType.BINARY_UNDERPRICED,
             market_type=MarketType.BINARY,
             total_cost=total_cost,
+            profit=profit,
+            profit_percent=profit_percent,
+            tokens=[yes_token, no_token],
+            liquidity=market.liquidity,
+            timestamp=datetime.now(),
+        )
+
+    async def _check_overpriced(
+        self, market: Market, yes_token, no_token
+    ) -> Optional[ArbitrageOpportunity]:
+        """
+        Check for overpriced opportunity: YES_bid + NO_bid > $1.00
+        Strategy: Mint pair for $1.00, sell both at bid
+        """
+        # Get best bid prices (what we receive when selling)
+        prices = await self.clob.get_prices_batch(
+            [yes_token.token_id, no_token.token_id], side="sell"
+        )
+
+        yes_bid = prices.get(yes_token.token_id)
+        no_bid = prices.get(no_token.token_id)
+
+        if yes_bid is None or no_bid is None:
+            return None
+        if yes_bid <= 0 or no_bid <= 0:
+            return None
+
+        total_value = yes_bid + no_bid
+
+        # Need total > $1 for overpriced arbitrage
+        if total_value <= 1.0:
+            return None
+
+        # Profit = sell proceeds - mint cost ($1)
+        profit = total_value - 1.0
+        profit_percent = (profit / 1.0) * 100  # Cost basis is $1 (mint cost)
+
+        if not self.meets_thresholds(
+            profit_percent, market.liquidity, self.min_profit, self.min_liquidity
+        ):
+            return None
+
+        # Update token prices (using bid prices for overpriced)
+        yes_token.price = yes_bid
+        yes_token.best_bid = yes_bid
+        no_token.price = no_bid
+        no_token.best_bid = no_bid
+
+        return ArbitrageOpportunity(
+            market_id=market.market_id,
+            condition_id=market.condition_id,
+            question=market.question,
+            url=market.url,
+            category=market.category,
+            arb_type=ArbitrageType.BINARY_OVERPRICED,
+            market_type=MarketType.BINARY,
+            total_cost=1.0,  # Mint cost is always $1
             profit=profit,
             profit_percent=profit_percent,
             tokens=[yes_token, no_token],

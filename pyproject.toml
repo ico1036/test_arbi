@@ -30,7 +30,6 @@ dev = [
 
 [project.scripts]
 polyarb = "polyarb.main:main"
-arb-scan = "polymarket_arbitrage_bot_v2:main"
 
 [build-system]
 requires = ["hatchling"]
