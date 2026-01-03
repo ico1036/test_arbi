@@ -198,6 +198,40 @@ Gross Profit > 2.0%  →  Net Profit after fees ~1.5%
 - Large opportunities ($500+) attract competition, close fast
 - Sweet spot: $50-200 profit range with >2% margin
 
+### Optimal Position Sizing (Kelly Criterion)
+
+For risk-free arbitrage with execution risk:
+```
+Optimal Bet Size = (p × b - q) / b
+
+Where:
+- p = Success probability (typically 0.7-0.9 for arbitrage)
+- b = Profit rate (e.g., 0.06 for 6% arbitrage)
+- q = Failure probability (1 - p)
+
+Example (6% arbitrage, 80% success rate):
+f* = (0.8 × 0.06 - 0.2) / 0.06 = -2.53
+
+Negative result → Use fractional Kelly (10-25% of bankroll)
+```
+
+**Practical Position Sizing Guidelines:**
+
+| Capital | Conservative (10%) | Moderate (20%) | Aggressive (30%) |
+|---------|-------------------|-----------------|------------------|
+| $1,000  | $100/trade       | $200/trade      | $300/trade       |
+| $10,000 | $1,000/trade     | $2,000/trade    | $3,000/trade     |
+| $50,000 | $5,000/trade     | $10,000/trade   | $15,000/trade    |
+
+**Risk-Adjusted Sizing:**
+```
+Adjusted Size = Base Size × (Margin / 3%)
+
+3% margin → 100% of base size
+6% margin → 200% of base size
+1.5% margin → 50% of base size
+```
+
 ---
 
 ## 🚀 Quick Start
@@ -314,6 +348,9 @@ order = client.create_and_post_order(
 - [ ] Profit simulation with fees
 - [ ] Market correlation analysis
 - [ ] Liquidity depth analysis
+- [ ] **Optimal betting strategy (Kelly Criterion)**
+- [ ] **Position sizing calculator**
+- [ ] **Risk-adjusted return analysis**
 
 ### Phase 3: Execution (📋 Planned)
 - [ ] py-clob-client integration
@@ -379,13 +416,13 @@ python -c "import requests; r=requests.get('https://clob.polymarket.com/markets'
 uv sync
 
 # v3.0 - Async high-performance (45x faster)
-PYTHONPATH=src uv run python -m polyarb --once              # Single scan
-PYTHONPATH=src uv run python -m polyarb --interval 10       # Continuous
-PYTHONPATH=src uv run python -m polyarb --min-profit 3      # 3%+ only
+uv run python -m polyarb --once              # Single scan
+uv run python -m polyarb --interval 10       # Continuous
+uv run python -m polyarb --min-profit 3      # 3%+ only
 
 # Run tests
-PYTHONPATH=src uv run pytest                                # All 78 tests
-PYTHONPATH=src uv run pytest tests/test_binary_arbitrage.py # Binary tests only
+uv run pytest                                # All 78 tests
+uv run pytest tests/test_binary_arbitrage.py # Binary tests only
 ```
 
 ## ⚠️ Key Risk Factors (Paper-based)
@@ -399,6 +436,29 @@ PYTHONPATH=src uv run pytest tests/test_binary_arbitrage.py # Binary tests only
 
 ---
 
+## 🧠 Strategy Advisor Subagent
+
+For theoretical discussions about arbitrage strategies, use the `/arb-advisor` command.
+
+**Usage:** `/arb-advisor <your question>`
+
+**Example:**
+```
+/arb-advisor Should I focus on NegRisk or Binary markets?
+/arb-advisor What's a realistic profit margin to target?
+/arb-advisor Explain the execution risk in multi-leg trades
+```
+
+The advisor has deep knowledge of the academic paper "Unravelling the Probabilistic Forest: Arbitrage in Prediction Markets" (arXiv:2508.03474) including:
+- $40M total extracted profit data
+- Strategy-by-strategy breakdown
+- Top trader statistics
+- Risk factors and mitigations
+- Market category analysis
+
+---
+
 *Last updated: 2025-01-03*
 *v3.0 - Async architecture with 45.9x speed improvement*
 *Phase 1 complete: Binary (underpriced + overpriced) & NegRisk detection*
+*Strategy Advisor: `.claude/commands/arb-advisor.md`*
