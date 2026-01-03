@@ -2,7 +2,7 @@
 
 ## 🎯 Project Overview
 
-This is a **Polymarket Arbitrage Detection System v3.0** - a high-performance quantitative trading tool designed to identify risk-free arbitrage opportunities in prediction markets.
+This is a **Polymarket Arbitrage Detection System v3.1** - a real-time WebSocket-based trading tool designed to identify risk-free arbitrage opportunities in prediction markets.
 
 **Based on academic paper findings:**
 - NegRisk Arbitrage: $29M extracted (largest source)
@@ -60,44 +60,38 @@ Example (5 candidates):
 
 ```
 polymarket_arbi/
-├── src/polyarb/                     # v3.0 - Async high-performance (45x faster)
+├── src/polyarb/                     # v3.1 - WebSocket real-time (<100ms detection)
 │   ├── api/
-│   │   ├── gamma.py                 # Market/event discovery (async)
-│   │   ├── clob.py                  # Price/orderbook (parallel 50 req)
-│   │   └── websocket.py             # Real-time streaming
-│   ├── strategies/
-│   │   ├── binary_arb.py            # Binary arbitrage (underpriced + overpriced)
-│   │   └── negrisk_arb.py           # Event-based NegRisk detection
-│   ├── scanner.py                   # Unified scanner
+│   │   ├── gamma.py                 # Market/event discovery (REST)
+│   │   ├── clob.py                  # Price/orderbook (REST for init)
+│   │   └── websocket.py             # Real-time streaming + RealtimeArbitrageDetector
+│   ├── scanner.py                   # WebSocket-based scanner (run method only)
 │   ├── alerts.py                    # Discord/Telegram
 │   ├── models.py                    # Data models
 │   ├── config.py                    # Configuration
 │   └── main.py                      # CLI entry point
 │
-├── tests/                           # Test suite (78 tests)
-│   ├── conftest.py                  # Fixtures & MockCLOBClient
-│   ├── test_models.py               # Data model tests
-│   ├── test_binary_arbitrage.py     # Binary strategy tests
-│   ├── test_negrisk_arbitrage.py    # NegRisk strategy tests
-│   └── test_edge_cases.py           # Edge case tests
+├── tests/                           # Test suite (48 tests)
+│   ├── conftest.py                  # Minimal fixtures
+│   ├── test_models.py               # Data model tests (21 tests)
+│   └── test_websocket_detection.py  # WebSocket detection tests (27 tests)
 │
 ├── README.md                        # Documentation
 ├── CLAUDE.md                        # This file - AI context
 ├── pyproject.toml                   # Project dependencies (uv)
 ├── .mcp.json                        # MCP server configuration
 ├── .env                             # Environment variables (create this)
-├── .claude_config/                  # Claude AI configuration
-│   └── settings.json                # Auto-approval for Python/uv commands
 └── arbitrage_opportunities.csv      # Auto-generated log file
 ```
 
 ### Version Comparison
 
-| Version | Architecture | 500 Markets Scan | Features |
-|---------|--------------|------------------|----------|
-| v1.0 | Sync REST | ~5 min | Basic detection |
-| v2.0 | Sync REST | ~5 min | + Alerts, logging |
-| **v3.0** | **Async REST** | **6.5 sec** | + NegRisk, WebSocket, depth analysis |
+| Version | Architecture | Detection Latency | Features |
+|---------|--------------|-------------------|----------|
+| v1.0 | Sync REST | ~5 min/scan | Basic detection |
+| v2.0 | Sync REST | ~5 min/scan | + Alerts, logging |
+| v3.0 | Async REST | ~15 sec/scan | + NegRisk, depth analysis |
+| **v3.1** | **WebSocket** | **<100ms** | Real-time streaming |
 
 ---
 
@@ -107,48 +101,69 @@ polymarket_arbi/
 
 | API | Endpoint | Purpose |
 |-----|----------|---------|
-| **Gamma API** | `https://gamma-api.polymarket.com/markets` | Fetch active binary markets |
-| **CLOB API** | `https://clob.polymarket.com` | Order book & pricing data |
+| **Gamma API** | `https://gamma-api.polymarket.com/markets` | Market discovery (REST) |
+| **CLOB API** | `https://clob.polymarket.com` | Initial price fetch (REST) |
+| **WebSocket** | `wss://ws-subscriptions-clob.polymarket.com` | Real-time price streaming |
 
 ### Key Classes
 
 ```python
-# Data Model
+# Real-time State Tracking (websocket.py)
 @dataclass
-class ArbitrageOpportunity:
+class MarketState:
+    """Tracks binary market state for arbitrage detection"""
     market_id: str
-    question: str
-    yes_price: float
-    no_price: float
-    total_cost: float
-    profit_percent: float
-    liquidity: float
-    # ... more fields
+    yes_token_id: str
+    no_token_id: str
+    yes_ask: Optional[float]
+    no_ask: Optional[float]
+    yes_bid: Optional[float]
+    no_bid: Optional[float]
 
-# Main Bot
-class PolymarketArbitrageBot:
-    def fetch_active_markets()      # Get all binary markets
-    def get_best_ask_price()        # Best ask from order book
-    def check_arbitrage()           # Analyze single market
-    def scan_all_markets()          # Full market sweep
-    def run_continuous()            # Main loop
+    def check_underpriced(min_profit) -> Optional[Dict]
+    def check_overpriced(min_profit) -> Optional[Dict]
+
+@dataclass
+class NegRiskEventState:
+    """Tracks multi-outcome event state"""
+    event_id: str
+    yes_prices: Dict[str, float]  # token_id -> price
+
+    def check_underpriced(min_profit) -> Optional[Dict]
+
+class RealtimeArbitrageDetector:
+    """Main detection engine - processes WebSocket messages"""
+    def register_binary_market(...)
+    def register_negrisk_event(...)
+    def process_message(message) -> List[Dict]  # Returns opportunities
+
+# Scanner (scanner.py)
+class ArbitrageScanner:
+    async def run()  # WebSocket-based real-time detection
 ```
 
-### Core Algorithm
+### Core Flow
 
 ```python
-def check_arbitrage(market):
-    yes_ask = get_best_ask_price(yes_token_id)
-    no_ask = get_best_ask_price(no_token_id)
+async def run():
+    # 1. REST: Fetch markets via Gamma API
+    markets = await gamma.get_all_markets()
+    events = await gamma.get_negrisk_events()
 
-    total_cost = yes_ask + no_ask
-    profit = 1.0 - total_cost
-    profit_percent = (profit / total_cost) * 100
+    # 2. REST: Get initial prices via CLOB API
+    prices = await clob.get_prices_batch(token_ids)
 
-    if profit_percent >= MIN_PROFIT_PERCENT:
-        if liquidity >= MIN_LIQUIDITY:
-            return ArbitrageOpportunity(...)
-    return None
+    # 3. Register with detector
+    detector = RealtimeArbitrageDetector(min_profit, min_liquidity)
+    for market in markets:
+        detector.register_binary_market(...)
+
+    # 4. WebSocket: Stream price updates
+    async with WebSocketClient() as ws:
+        await ws.subscribe(token_ids)
+        async for message in ws.listen():
+            opportunities = detector.process_message(message)
+            # Display/alert on new opportunities
 ```
 
 ---
@@ -159,8 +174,7 @@ def check_arbitrage(market):
 ```python
 MIN_PROFIT_PERCENT = 1.0    # Minimum 1% profit threshold
 MIN_LIQUIDITY = 1000        # Minimum $1,000 market liquidity
-SCAN_INTERVAL = 10          # Seconds between scans (v2)
-MAX_MARKETS = 500           # Markets to analyze per scan
+MAX_MARKETS = 500           # Markets to monitor
 ```
 
 ### Environment Variables (.env)
@@ -173,11 +187,11 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 ### CLI Arguments
 ```bash
-python polymarket_arbitrage_bot_v2.py \
-    --min-profit 2.0 \      # Higher profit threshold
-    --min-liquidity 5000 \  # Higher liquidity requirement
-    --interval 5 \          # Faster scanning
-    --once                  # Single run mode
+python -m polyarb                          # Real-time scanning
+python -m polyarb --min-profit 3.0         # 3%+ opportunities only
+python -m polyarb --min-liquidity 10000    # $10K+ liquidity only
+python -m polyarb --no-alerts              # Disable alerts
+python -m polyarb --no-log                 # Disable CSV logging
 ```
 
 ---
@@ -195,44 +209,7 @@ Gross Profit > 1.5%  →  Net Profit after fees ~1.0%
 Gross Profit > 2.0%  →  Net Profit after fees ~1.5%
 ```
 
-### Scale Considerations
-- Small opportunities ($10-50 profit) may not be worth gas fees
-- Large opportunities ($500+) attract competition, close fast
-- Sweet spot: $50-200 profit range with >2% margin
-
-### Optimal Position Sizing (Kelly Criterion)
-
-For risk-free arbitrage with execution risk:
-```
-Optimal Bet Size = (p × b - q) / b
-
-Where:
-- p = Success probability (typically 0.7-0.9 for arbitrage)
-- b = Profit rate (e.g., 0.06 for 6% arbitrage)
-- q = Failure probability (1 - p)
-
-Example (6% arbitrage, 80% success rate):
-f* = (0.8 × 0.06 - 0.2) / 0.06 = -2.53
-
-Negative result → Use fractional Kelly (10-25% of bankroll)
-```
-
-**Practical Position Sizing Guidelines:**
-
-| Capital | Conservative (10%) | Moderate (20%) | Aggressive (30%) |
-|---------|-------------------|-----------------|------------------|
-| $1,000  | $100/trade       | $200/trade      | $300/trade       |
-| $10,000 | $1,000/trade     | $2,000/trade    | $3,000/trade     |
-| $50,000 | $5,000/trade     | $10,000/trade   | $15,000/trade    |
-
-**Risk-Adjusted Sizing:**
-```
-Adjusted Size = Base Size × (Margin / 3%)
-
-3% margin → 100% of base size
-6% margin → 200% of base size
-1.5% margin → 50% of base size
-```
+**Recommended Margin**: 3%+ for safety after potential fees
 
 ---
 
@@ -240,95 +217,31 @@ Adjusted Size = Base Size × (Margin / 3%)
 
 ### Installation
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # or: venv\Scripts\activate (Windows)
+# Setup with uv
+uv sync
 
-# Install dependencies
-pip install requests python-dotenv
+# Run real-time scanner
+uv run python -m polyarb
 
-# Run bot
-python polymarket_arbitrage_bot_v2.py
+# Run with custom thresholds
+uv run python -m polyarb --min-profit 3 --min-liquidity 5000
 ```
 
-### Common Usage Patterns
+### Run Tests
 ```bash
-# Conservative scan (higher thresholds)
-python polymarket_arbitrage_bot_v2.py --min-profit 3.0 --min-liquidity 10000
-
-# Quick test
-python polymarket_arbitrage_bot_v2.py --once
-
-# Aggressive monitoring (fast scan, low threshold)
-python polymarket_arbitrage_bot_v2.py --min-profit 0.5 --interval 3
-
-# Silent mode (no alerts)
-python polymarket_arbitrage_bot_v2.py --no-alerts --no-log
-```
-
----
-
-## 📊 Output Formats
-
-### Console Output
-```
-╔════════════════════════════════════════════════════════════════════╗
-║                    🚨 ARBITRAGE OPPORTUNITY FOUND!                 ║
-╠════════════════════════════════════════════════════════════════════╣
-║ 📊 Market: Will Bitcoin reach $100k by 2024?                      ║
-║ 💰 Profit: 2.54% ($25.40 per $1,000)                              ║
-║ 💧 Liquidity: $45,230                                             ║
-║ ⏳ Found at: 2024-12-31 14:30:22                                  ║
-╚════════════════════════════════════════════════════════════════════╝
-```
-
-### CSV Log (arbitrage_opportunities.csv)
-```csv
-timestamp,market_id,question,yes_price,no_price,total_cost,profit,profit_percent,liquidity,url
-2024-12-31T14:30:22,abc123,Will BTC...,0.48,0.46,0.94,0.06,6.38,45230,https://...
-```
-
----
-
-## 🔬 Advanced: Trade Execution
-
-**Current Status**: Detection only (no auto-execution)
-
-### For Automated Trading
-```python
-# Install official Python CLOB client
-pip install py-clob-client
-
-# Required for trading:
-from py_clob_client.client import ClobClient
-
-client = ClobClient(
-    host="https://clob.polymarket.com",
-    chain_id=137,  # Polygon
-    key="YOUR_PRIVATE_KEY",
-    creds=ApiCreds(api_key, api_secret, passphrase)
-)
-
-# Place order
-order = client.create_and_post_order(
-    OrderArgs(
-        token_id=token_id,
-        price=0.48,
-        size=100,
-        side=BUY
-    )
-)
+uv run pytest                               # All 48 tests
+uv run pytest tests/test_websocket_detection.py  # WebSocket tests only
+uv run pytest tests/test_models.py          # Model tests only
 ```
 
 ---
 
 ## ⚠️ Risk Factors
 
-1. **Execution Risk**: Prices change; opportunity may disappear
-2. **Liquidity Risk**: Large orders move prices
-3. **Gas Fees**: Polygon network costs ~$0.01-0.10
-4. **Platform Risk**: Polymarket terms of service
-5. **Market Resolution**: Some markets have edge cases
+1. **Execution Risk**: Non-atomic trades - one leg may fail
+2. **Latency**: Top arbitragers are bots (Top 1: $2M, 4,049 trades)
+3. **Liquidity**: Large orders cause slippage
+4. **Fee Changes**: Currently 0%, may change
 
 ---
 
@@ -337,104 +250,19 @@ order = client.create_and_post_order(
 ### Phase 1: Detection (✅ Complete)
 - [x] Gamma API integration
 - [x] CLOB order book parsing
-- [x] Arbitrage calculation engine
-  - [x] Binary UNDERPRICED (YES_ask + NO_ask < $1)
-  - [x] Binary OVERPRICED (YES_bid + NO_bid > $1)
-  - [x] NegRisk UNDERPRICED (sum of YES < $1)
+- [x] Binary UNDERPRICED detection
+- [x] Binary OVERPRICED detection
+- [x] NegRisk UNDERPRICED detection
 - [x] Discord/Telegram alerts
 - [x] CSV logging
-- [x] Comprehensive test suite (78 tests)
+- [x] **WebSocket real-time detection (<100ms)**
+- [x] Test suite (48 tests)
 
-### Phase 2: Analysis (🔄 In Progress)
-- [ ] Historical opportunity tracking
-- [ ] Profit simulation with fees
-- [ ] Market correlation analysis
-- [ ] Liquidity depth analysis
-- [ ] **Optimal betting strategy (Kelly Criterion)**
-- [ ] **Position sizing calculator**
-- [ ] **Risk-adjusted return analysis**
-
-### Phase 3: Execution (📋 Planned)
+### Phase 2: Execution (📋 Planned)
 - [ ] py-clob-client integration
 - [ ] Order management system
 - [ ] Position tracking
 - [ ] P&L reporting
-
----
-
-## 🧪 Testing Commands
-
-```bash
-# Single scan test
-python polymarket_arbitrage_bot_v2.py --once --min-profit 0.1
-
-# Verify API connectivity
-python -c "import requests; print(requests.get('https://gamma-api.polymarket.com/markets?limit=1').status_code)"
-
-# Check order book
-python -c "import requests; r=requests.get('https://clob.polymarket.com/markets'); print(r.status_code, len(r.json()))"
-```
-
----
-
-## 📚 Reference
-
-- **Polymarket Docs**: https://docs.polymarket.com
-- **CLOB API Docs**: https://docs.polymarket.com/#clob-api
-- **py-clob-client**: https://github.com/Polymarket/py-clob-client
-- **Jane Street Reference**: Account88888 (historical arbitrage trader)
-
----
-
-## 🔑 Key Insights for Quant Traders
-
-1. **Speed matters**: Opportunities close within seconds
-2. **Size matters**: Small opportunities have worse risk/reward
-3. **Fees eat margins**: Target >1.5% gross for net profit
-4. **Liquidity is king**: Low liquidity = high slippage
-5. **Monitor continuously**: Best opportunities appear during volatility
-
----
-
-## 📦 Project Files Reference
-
-| File | Purpose |
-|------|---------|
-| `src/polyarb/` | v3.0 - Async high-performance implementation |
-| `src/polyarb/strategies/binary_arb.py` | Binary arbitrage (underpriced + overpriced) |
-| `src/polyarb/strategies/negrisk_arb.py` | NegRisk multi-outcome arbitrage |
-| `tests/` | Comprehensive test suite (78 tests) |
-| `CLAUDE.md` | This file - AI context document |
-| `README.md` | Original documentation (Korean) |
-| `pyproject.toml` | Project dependencies (uv) |
-| `.env` | Environment variables (create this) |
-
----
-
-## 🚀 Quick Commands
-
-```bash
-# Setup
-uv sync
-
-# v3.0 - Async high-performance (45x faster)
-uv run python -m polyarb --once              # Single scan
-uv run python -m polyarb --interval 10       # Continuous
-uv run python -m polyarb --min-profit 3      # 3%+ only
-
-# Run tests
-uv run pytest                                # All 78 tests
-uv run pytest tests/test_binary_arbitrage.py # Binary tests only
-```
-
-## ⚠️ Key Risk Factors (Paper-based)
-
-1. **Execution Risk**: Non-atomic trades - one leg may fail
-2. **Latency**: Top arbitragers are bots (Top 1: $2M, 4,049 trades)
-3. **Liquidity**: Large orders cause slippage
-4. **Fee Changes**: Currently 0%, may change
-
-**Recommended Margin**: 3%+ for safety after potential fees
 
 ---
 
@@ -451,16 +279,8 @@ For theoretical discussions about arbitrage strategies, use the `/arb-advisor` c
 /arb-advisor Explain the execution risk in multi-leg trades
 ```
 
-The advisor has deep knowledge of the academic paper "Unravelling the Probabilistic Forest: Arbitrage in Prediction Markets" (arXiv:2508.03474) including:
-- $40M total extracted profit data
-- Strategy-by-strategy breakdown
-- Top trader statistics
-- Risk factors and mitigations
-- Market category analysis
-
 ---
 
 *Last updated: 2025-01-03*
-*v3.0 - Async architecture with 45.9x speed improvement*
-*Phase 1 complete: Binary (underpriced + overpriced) & NegRisk detection*
+*v3.1 - WebSocket-only architecture with <100ms detection latency*
 *Strategy Advisor: `.claude/commands/arb-advisor.md`*
