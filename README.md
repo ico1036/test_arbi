@@ -57,6 +57,35 @@ uv run pytest                        # 테스트 (76개)
 A승 YES $0.20 + B승 YES $0.18 + C승 YES $0.17 + ... = $0.88 → 12% 수익
 ```
 
+## 퀀트 전략 파라미터
+
+수익률에 영향을 미치는 핵심 요소 3가지:
+
+| 요소 | 설명 | 파라미터 | 구현 상태 |
+|------|------|----------|-----------|
+| **Selection** | 어떤 기회를 잡을지 | `--min-profit`, `--min-liquidity` | ✅ 구현됨 |
+| **Sizing** | 얼마나 배팅할지 | `--size`, liquidity cap (5% 고정) | ⚠️ 부분 구현 |
+| **Execution** | 실행 속도 (기계빨) | 미구현 | ❌ Phase 3 예정 |
+
+### Selection (기회 선택)
+```bash
+# 보수적: 3% 이상, 유동성 $5,000 이상만
+uv run python -m polyarb --min-profit 3 --min-liquidity 5000
+```
+
+### Sizing (배팅 크기)
+```bash
+# 기회당 $100 투자, 단 유동성의 5%까지만 (하드코딩)
+uv run python -m polyarb paper --size 100
+```
+- `--size 100`: 기회당 최대 $100 투자
+- 유동성 제한: 마켓 유동성의 5%까지만 사용 (슬리피지 방지)
+- 예: 유동성 $1,000 마켓 → 최대 $50만 투자 가능
+
+### Execution (실행) - 미구현
+- 현재: Paper Trading만 지원 (즉시 체결 가정)
+- Phase 3에서 `py-clob-client` 연동 예정
+
 ## CLI 옵션
 
 ### 주요 파라미터 설명
