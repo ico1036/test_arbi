@@ -1,30 +1,44 @@
-# Polymarket Arbitrage Bot v3.0
+# Polymarket Arbitrage Bot v3.1
 
 ## Quick Start (30초)
 
 ```bash
 uv sync                              # 설치
-uv run python -m polyarb --once      # 1회 스캔
-uv run pytest                        # 테스트 (78개)
+uv run python -m polyarb             # 실시간 스캔 (WebSocket)
+uv run pytest                        # 테스트 (48개)
 ```
 
 **출력 예시:**
 ```
-🔍 Scanning 500 markets...
+⚡ Real-time WebSocket arbitrage detection
 
-╔══════════════════════════════════════════════════════════════╗
-║  🚨 ARBITRAGE FOUND: Will BTC reach $100k?                   ║
-║  💰 Profit: 6.38% ($63.80 per $1,000)                        ║
-║  📊 YES: $0.48 + NO: $0.46 = $0.94                           ║
-║  💧 Liquidity: $45,230                                       ║
-║  🔗 https://polymarket.com/event/...                         ║
-╚══════════════════════════════════════════════════════════════╝
+📊 Fetching markets...
+   Found 264 binary markets
+   Found 15 NegRisk events
 
-✅ Scan complete: 3 opportunities found in 6.5s
-```
+✅ Registered:
+   Binary markets: 187
+   NegRisk events: 12
+   Total tokens: 398
 
-```bash
-uv run python -m polyarb --interval 10   # 연속 모니터링 (10초 간격)
+🔌 Connecting to WebSocket...
+⚡ Listening for real-time price updates...
+
+======================================================================
+🎯 BINARY_UNDERPRICED [BUY] - 6.38% profit
+======================================================================
+📌 Will Bitcoin reach $100k by 2024?...
+🔗 https://polymarket.com/event/will-btc-100k
+----------------------------------------------------------------------
+   YES ask: $0.4500
+   NO ask:  $0.4800
+   Total:   $0.9300
+----------------------------------------------------------------------
+💰 Profit: $0.0700 (6.38%)
+💧 Liquidity: $45,230
+💡 $2,261 → $144.24 profit
+======================================================================
+⏰ Detected at: 14:30:22.156
 ```
 
 ## 핵심 개념
@@ -48,8 +62,9 @@ A승 YES $0.20 + B승 YES $0.18 + C승 YES $0.17 + ... = $0.88 → 12% 수익
 |------|--------|------|
 | `--min-profit` | 1.0 | 최소 수익률 % |
 | `--min-liquidity` | 1000 | 최소 유동성 $ |
-| `--interval` | 10 | 스캔 간격 (초) |
-| `--once` | - | 1회만 스캔 |
+| `--max-markets` | 500 | 모니터링할 최대 마켓 수 |
+| `--no-alerts` | - | 알림 비활성화 |
+| `--no-log` | - | CSV 로깅 비활성화 |
 
 ## 알림 설정 (.env)
 
@@ -61,4 +76,4 @@ TELEGRAM_CHAT_ID=123456789
 
 ---
 
-*v3.0 - 78 tests passing, Binary (underpriced + overpriced) & NegRisk detection*
+*v3.1 - WebSocket 실시간 감지 (<100ms), 48 tests passing*
