@@ -1,47 +1,23 @@
-# Polymarket Arbitrage Bot v3.3
+# Polymarket Arbitrage Bot v3.4
 
-## Quick Start (30초)
+## Quick Start
 
 ```bash
 uv sync                                         # 설치
-uv run python -m polyarb                        # 실시간 스캔 (WebSocket)
-uv run python -m polyarb paper --mode moderate  # 페이퍼 트레이딩 (프리셋)
-uv run python run_dashboard.py                  # 웹 대시보드
-uv run pytest                                   # 테스트 (88개)
+uv run python -m polyarb                        # 실시간 스캔
+uv run python -m polyarb paper --mode moderate  # 페이퍼 트레이딩
+uv run pytest                                   # 테스트 (94개)
 ```
 
-**출력 예시:**
+## 페이퍼 트레이딩 결과
+
+```bash
+uv run python -m polyarb paper --mode moderate --duration 60
 ```
-⚡ Real-time WebSocket arbitrage detection
 
-📊 Fetching markets...
-   Found 264 binary markets
-   Found 15 NegRisk events
-
-✅ Registered:
-   Binary markets: 187
-   NegRisk events: 12
-   Total tokens: 398
-
-🔌 Connecting to WebSocket...
-⚡ Listening for real-time price updates...
-
-======================================================================
-🎯 BINARY_UNDERPRICED [BUY] - 6.38% profit
-======================================================================
-📌 Will Bitcoin reach $100k by 2024?...
-🔗 https://polymarket.com/event/will-btc-100k
-----------------------------------------------------------------------
-   YES ask: $0.4500
-   NO ask:  $0.4800
-   Total:   $0.9300
-----------------------------------------------------------------------
-💰 Profit: $0.0700 (6.38%)
-💧 Liquidity: $45,230
-💡 $2,261 → $144.24 profit
-======================================================================
-⏰ Detected at: 14:30:22.156
-```
+종료 시 자동 생성:
+- `paper_trading_YYYYMMDD_HHMMSS.json` - 상세 데이터
+- `paper_trading_YYYYMMDD_HHMMSS.png` - 시각화 차트
 
 ## 핵심 개념
 
@@ -150,11 +126,6 @@ uv run python -m polyarb paper --balance 10000 --size 100 --failure-rate 0.15
 | `--failure-rate` | 0 | 실행 실패율 시뮬레이션 (0-1) |
 | `--latency` | 0 | 지연시간 시뮬레이션 (ms) |
 
-### 웹 대시보드
-```bash
-uv run python run_dashboard.py              # http://localhost:8080
-uv run python run_dashboard.py --port 3000  # 포트 변경
-```
 
 ## 알림 설정 (.env)
 
@@ -166,4 +137,4 @@ TELEGRAM_CHAT_ID=123456789
 
 ---
 
-*v3.3 - Preset Modes, Realistic Simulation, Web Dashboard 추가, 88 tests passing*
+*v3.4 - PNG Summary Chart, 94 tests passing*

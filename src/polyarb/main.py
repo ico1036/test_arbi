@@ -23,7 +23,7 @@ from datetime import datetime
 
 from .config import config
 from .scanner import ArbitrageScanner
-from .paper_trading import PaperTradingEngine, TradingMode, PRESETS, get_mode_comparison
+from .paper_trading import PaperTradingEngine, TradingMode, PRESETS, get_mode_comparison, SummaryChart
 
 
 def parse_args():
@@ -45,15 +45,6 @@ Paper-based recommendations:
 
     # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Commands")
-
-    # Dashboard subcommand
-    dash_parser = subparsers.add_parser("dashboard", help="Web dashboard (NiceGUI)")
-    dash_parser.add_argument(
-        "--port",
-        type=int,
-        default=8080,
-        help="Port for dashboard (default: 8080)",
-    )
 
     # Paper trading subcommand
     paper_parser = subparsers.add_parser("paper", help="Paper trading mode")
@@ -261,11 +252,11 @@ async def run_paper_trading(args):
         print("Scanning for initial opportunities...")
         initial_count = 0
         for state in detector.binary_markets.values():
-            opp = state.check_underpriced(args.min_profit)
+            opp = state.check_underpriced(min_profit)
             if opp:
                 engine.execute_opportunity(opp)
                 initial_count += 1
-            opp = state.check_overpriced(args.min_profit)
+            opp = state.check_overpriced(min_profit)
             if opp:
                 engine.execute_opportunity(opp)
                 initial_count += 1
@@ -292,12 +283,23 @@ async def run_paper_trading(args):
     print("=" * 64)
     engine.print_status()
 
-    # Save summary
+    # Save summary (JSON + PNG)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    # JSON
     summary = engine.get_summary()
-    filename = f"paper_trading_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(filename, 'w') as f:
+    json_file = f"paper_trading_{timestamp}.json"
+    with open(json_file, 'w') as f:
         json.dump(summary, f, indent=2)
-    print(f"\n  Summary saved to: {filename}")
+
+    # PNG chart
+    png_file = f"paper_trading_{timestamp}.png"
+    chart = SummaryChart(engine)
+    chart.save(png_file)
+
+    print("\n  Results saved:")
+    print(f"    {json_file}")
+    print(f"    {png_file}")
 
 
 async def main_async():
@@ -326,15 +328,6 @@ async def main_async():
 
 def main():
     """Entry point"""
-    # Parse args first to check for dashboard command
-    args = parse_args()
-
-    # Dashboard runs its own event loop (NiceGUI)
-    if args.command == "dashboard":
-        from .dashboard import run_dashboard
-        run_dashboard(port=args.port)
-        return
-
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
