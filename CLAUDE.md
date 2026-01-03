@@ -86,6 +86,8 @@ polymarket_arbi/
 ├── pyproject.toml                   # Project dependencies (uv)
 ├── .mcp.json                        # MCP server configuration
 ├── .env                             # Environment variables (create this)
+├── .claude_config/                  # Claude AI configuration
+│   └── settings.json                # Auto-approval for Python/uv commands
 └── arbitrage_opportunities.csv      # Auto-generated log file
 ```
 

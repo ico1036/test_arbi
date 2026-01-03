@@ -1,23 +1,18 @@
 #!/usr/bin/env python3
 """
-Polymarket Arbitrage Bot v3.0
+Polymarket Arbitrage Bot v3.1
 =============================
-High-performance arbitrage detection for Polymarket.
+Real-time WebSocket-based arbitrage detection for Polymarket.
 
 Features:
-- Async REST API for 9x faster scanning
-- WebSocket support for real-time updates
+- WebSocket streaming for <100ms detection latency
 - Binary (YES/NO) and NegRisk (multi-outcome) arbitrage
-- Order book depth analysis
 - Discord/Telegram alerts
 
 Usage:
-    python -m polyarb                          # Default scan
-    python -m polyarb --once                   # Single scan
+    python -m polyarb                          # Real-time scanning
     python -m polyarb --min-profit 3.0         # 3%+ opportunities only
     python -m polyarb --min-liquidity 10000    # $10K+ liquidity only
-    python -m polyarb --interval 5             # 5 second intervals
-    python -m polyarb --hybrid                 # REST + WebSocket mode
 """
 import argparse
 import asyncio
@@ -29,14 +24,12 @@ from .scanner import ArbitrageScanner
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Polymarket Arbitrage Scanner v3.0",
+        description="Polymarket Arbitrage Scanner v3.1 (WebSocket)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python -m polyarb                          # Continuous scanning
-    python -m polyarb --once                   # Single scan
+    python -m polyarb                          # Real-time scanning
     python -m polyarb --min-profit 2 --min-liquidity 5000
-    python -m polyarb --hybrid                 # REST + WebSocket mode
 
 Paper-based recommendations:
     - Sports markets: Higher frequency of opportunities
@@ -58,26 +51,10 @@ Paper-based recommendations:
         help=f"Minimum liquidity $ (default: {config.arbitrage.min_liquidity})",
     )
     parser.add_argument(
-        "--interval",
-        type=int,
-        default=config.arbitrage.scan_interval,
-        help=f"Scan interval in seconds (default: {config.arbitrage.scan_interval})",
-    )
-    parser.add_argument(
         "--max-markets",
         type=int,
         default=config.arbitrage.max_markets,
         help=f"Maximum markets to scan (default: {config.arbitrage.max_markets})",
-    )
-    parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Run single scan and exit",
-    )
-    parser.add_argument(
-        "--hybrid",
-        action="store_true",
-        help="Hybrid mode: REST scan + WebSocket monitoring",
     )
     parser.add_argument(
         "--no-alerts",
@@ -113,13 +90,8 @@ async def main_async():
         enable_logging=not args.no_log,
     )
 
-    # Run appropriate mode
-    if args.once:
-        await scanner.run_once()
-    elif args.hybrid:
-        await scanner.run_hybrid()
-    else:
-        await scanner.run_continuous(interval=args.interval)
+    # Run real-time WebSocket scanner
+    await scanner.run()
 
 
 def main():

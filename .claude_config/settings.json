@@ -1,0 +1,19 @@
+{
+  "allowed_commands": [
+    {
+      "tool": "Bash",
+      "patterns": [
+        "python *",
+        "python3 *",
+        "uv *",
+        "uv run *",
+        "uv sync",
+        "uv pip *",
+        "pytest *",
+        "pip *",
+        "pip3 *"
+      ]
+    }
+  ],
+  "description": "Allow Python and uv commands without user approval for Polymarket Arbitrage Bot project"
+}
