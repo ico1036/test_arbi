@@ -1,12 +1,13 @@
-# Polymarket Arbitrage Bot v3.2
+# Polymarket Arbitrage Bot v3.3
 
 ## Quick Start (30초)
 
 ```bash
-uv sync                              # 설치
-uv run python -m polyarb             # 실시간 스캔 (WebSocket)
-uv run python -m polyarb paper       # 페이퍼 트레이딩 모드
-uv run pytest                        # 테스트 (76개)
+uv sync                                         # 설치
+uv run python -m polyarb                        # 실시간 스캔 (WebSocket)
+uv run python -m polyarb paper --mode moderate  # 페이퍼 트레이딩 (프리셋)
+uv run python -m polyarb dashboard              # 웹 대시보드
+uv run pytest                                   # 테스트 (88개)
 ```
 
 **출력 예시:**
@@ -122,17 +123,38 @@ UNDERPRICED 예시:
 | `--no-log` | - | CSV 로깅 비활성화 |
 
 ### 페이퍼 트레이딩 모드
+
+**프리셋 모드 (권장):**
 ```bash
-uv run python -m polyarb paper --balance 10000 --size 100 --min-profit 3
+uv run python -m polyarb paper --mode conservative  # 안전: 5%+, 실패율 30%
+uv run python -m polyarb paper --mode moderate      # 균형: 3%+, 실패율 20%
+uv run python -m polyarb paper --mode aggressive    # 공격: 1%+, 실패율 10%
+```
+
+| 모드 | Min Profit | Position Size | Failure Rate | 설명 |
+|------|------------|---------------|--------------|------|
+| conservative | 5% | $50 | 30% | 현실적 최악 시나리오 |
+| moderate | 3% | $100 | 20% | 논문 권장 기준 |
+| aggressive | 1% | $200 | 10% | 낙관적 시나리오 |
+
+**커스텀 설정:**
+```bash
+uv run python -m polyarb paper --balance 10000 --size 100 --failure-rate 0.15
 ```
 
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
+| `--mode` | - | 프리셋 모드 (conservative/moderate/aggressive) |
 | `--balance` | 10000 | 초기 가상 잔고 $ |
-| `--size` | 100 | 기회당 투자 금액 $ (유동성 5%까지) |
-| `--duration` | 0 | 실행 시간 (초, 0=무제한) |
-| `--min-profit` | 1.0 | 최소 수익률 % (투자 대비) |
-| `--min-liquidity` | 1000 | 최소 유동성 $ |
+| `--size` | 100 | 기회당 투자 금액 $ |
+| `--failure-rate` | 0 | 실행 실패율 시뮬레이션 (0-1) |
+| `--latency` | 0 | 지연시간 시뮬레이션 (ms) |
+
+### 웹 대시보드
+```bash
+uv run python -m polyarb dashboard              # http://localhost:8080
+uv run python -m polyarb dashboard --port 3000  # 포트 변경
+```
 
 ## 알림 설정 (.env)
 
@@ -144,4 +166,4 @@ TELEGRAM_CHAT_ID=123456789
 
 ---
 
-*v3.2 - Paper Trading PoC 추가, 76 tests passing*
+*v3.3 - Preset Modes, Realistic Simulation, Web Dashboard 추가, 88 tests passing*

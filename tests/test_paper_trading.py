@@ -5,6 +5,7 @@ Tests verify:
 - Position sizing and balance management
 - Trade execution and P&L calculation
 - Session statistics and reporting
+- Preset modes and realistic simulation
 """
 import pytest
 from datetime import datetime
@@ -14,6 +15,7 @@ sys.path.insert(0, "src")
 
 from polyarb.paper_trading.models import Position, Trade, TradingSession, PositionStatus
 from polyarb.paper_trading.engine import PaperTradingEngine
+from polyarb.paper_trading.presets import TradingMode, PRESETS, get_mode_comparison
 
 
 class TestPositionModel:
@@ -549,3 +551,205 @@ class TestPaperTradingEdgeCases:
 
         assert success is False
         assert engine.balance == 96.99
+
+
+class TestPresetModes:
+    """Tests for preset trading modes"""
+
+    def test_conservative_mode_settings(self):
+        """Conservative mode has correct default settings"""
+        settings = PRESETS[TradingMode.CONSERVATIVE]
+
+        assert settings.min_profit == 5.0
+        assert settings.failure_rate == 0.3
+        assert settings.latency_ms == 3000
+        assert settings.liquidity_cap_pct == 1.0
+
+    def test_moderate_mode_settings(self):
+        """Moderate mode has correct default settings"""
+        settings = PRESETS[TradingMode.MODERATE]
+
+        assert settings.min_profit == 3.0
+        assert settings.failure_rate == 0.2
+        assert settings.latency_ms == 2000
+
+    def test_aggressive_mode_settings(self):
+        """Aggressive mode has correct default settings"""
+        settings = PRESETS[TradingMode.AGGRESSIVE]
+
+        assert settings.min_profit == 1.0
+        assert settings.failure_rate == 0.1
+        assert settings.latency_ms == 1000
+
+    def test_engine_with_preset_mode(self):
+        """Engine applies preset settings correctly"""
+        engine = PaperTradingEngine(
+            initial_balance=10000,
+            mode=TradingMode.CONSERVATIVE,
+        )
+
+        assert engine.mode == TradingMode.CONSERVATIVE
+        assert engine.position_size == 50  # Conservative size
+        assert engine.failure_rate == 0.3
+        assert engine.latency_ms == 3000
+
+    def test_get_mode_comparison(self):
+        """Mode comparison string is generated"""
+        comparison = get_mode_comparison()
+
+        assert "Conservative" in comparison
+        assert "Moderate" in comparison
+        assert "Aggressive" in comparison
+
+
+class TestRealisticSimulation:
+    """Tests for realistic execution simulation"""
+
+    def test_failure_rate_causes_skipped_trades(self):
+        """High failure rate causes trades to be skipped"""
+        # Use 100% failure rate for deterministic test
+        engine = PaperTradingEngine(
+            initial_balance=10000,
+            position_size=100,
+            failure_rate=1.0,  # 100% failure
+        )
+
+        opportunity = {
+            "type": "BINARY_UNDERPRICED",
+            "market_id": "0xtest",
+            "question": "Test",
+            "total_cost": 0.97,
+            "profit_percent": 3.09,
+            "liquidity": 50000,
+        }
+
+        success = engine.execute_opportunity(opportunity)
+
+        assert success is False
+        assert engine.opportunities_failed == 1
+        assert engine.opportunities_skipped == 1
+        assert engine.balance == 10000  # No change
+
+    def test_zero_failure_rate_allows_trades(self):
+        """Zero failure rate allows all valid trades"""
+        engine = PaperTradingEngine(
+            initial_balance=10000,
+            position_size=100,
+            failure_rate=0.0,
+        )
+
+        opportunity = {
+            "type": "BINARY_UNDERPRICED",
+            "market_id": "0xtest",
+            "question": "Test",
+            "total_cost": 0.97,
+            "profit_percent": 3.09,
+            "liquidity": 50000,
+        }
+
+        success = engine.execute_opportunity(opportunity)
+
+        assert success is True
+        assert engine.opportunities_failed == 0
+
+    def test_failure_callback_is_called(self):
+        """Failure callback is invoked on simulated failure"""
+        engine = PaperTradingEngine(
+            initial_balance=10000,
+            position_size=100,
+            failure_rate=1.0,
+        )
+
+        failures = []
+        engine.on_failure = lambda opp, reason: failures.append((opp, reason))
+
+        opportunity = {
+            "type": "BINARY_UNDERPRICED",
+            "market_id": "0xtest",
+            "question": "Test",
+            "total_cost": 0.97,
+            "profit_percent": 3.09,
+            "liquidity": 50000,
+        }
+
+        engine.execute_opportunity(opportunity)
+
+        assert len(failures) == 1
+        assert failures[0][1] == "execution_failed"
+
+    def test_custom_liquidity_cap(self):
+        """Custom liquidity cap is applied"""
+        engine = PaperTradingEngine(
+            initial_balance=10000,
+            position_size=1000,  # Request large size
+            liquidity_cap_pct=1.0,  # Only 1% of liquidity
+        )
+
+        opportunity = {
+            "type": "BINARY_UNDERPRICED",
+            "market_id": "0xtest",
+            "question": "Test",
+            "total_cost": 0.97,
+            "profit_percent": 3.09,
+            "liquidity": 10000,  # $10k liquidity -> max $100 (1%)
+        }
+
+        engine.execute_opportunity(opportunity)
+
+        # Position should be capped at 1% of 10000 = 100
+        assert engine.positions
+        pos = list(engine.positions.values())[0]
+        assert pos.size == 100
+
+
+class TestAdvancedMetrics:
+    """Tests for advanced metrics"""
+
+    def test_max_drawdown_no_trades(self):
+        """Max drawdown is 0 with no trades"""
+        engine = PaperTradingEngine(initial_balance=10000)
+
+        assert engine.max_drawdown == 0.0
+
+    def test_execution_rate_calculation(self):
+        """Execution rate is calculated correctly"""
+        engine = PaperTradingEngine(
+            initial_balance=10000,
+            position_size=100,
+        )
+
+        opportunity = {
+            "type": "BINARY_UNDERPRICED",
+            "market_id": "0xtest",
+            "question": "Test",
+            "total_cost": 0.97,
+            "profit_percent": 3.09,
+            "liquidity": 50000,
+        }
+
+        # Execute 2 trades
+        engine.execute_opportunity(opportunity)
+        engine.execute_opportunity({**opportunity, "market_id": "0xtest2"})
+
+        # Skip 1 trade (no liquidity)
+        engine.execute_opportunity({**opportunity, "market_id": "0xtest3", "liquidity": 0})
+
+        assert engine.opportunities_seen == 3
+        assert engine.opportunities_executed == 2
+        assert engine.execution_rate == pytest.approx(66.67, rel=0.01)
+
+    def test_status_includes_simulation_settings(self):
+        """Status includes simulation settings"""
+        engine = PaperTradingEngine(
+            initial_balance=10000,
+            mode=TradingMode.MODERATE,
+        )
+
+        status = engine.get_status()
+
+        assert status["mode"] == "moderate"
+        assert status["latency_ms"] == 2000
+        assert status["failure_rate"] == 0.2
+        assert "max_drawdown" in status
+        assert "execution_rate" in status
+        assert "opportunities_failed" in status

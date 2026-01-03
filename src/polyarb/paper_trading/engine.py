@@ -1,9 +1,11 @@
 """Paper Trading Engine - PoC for arbitrage strategy validation"""
+import random
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Callable
 
 from .models import Position, Trade, TradingSession, PositionStatus
+from .presets import TradingMode, ModeSettings, PRESETS, get_mode_comparison
 
 
 class PaperTradingEngine:
@@ -31,11 +33,29 @@ class PaperTradingEngine:
         initial_balance: float = 10000,
         position_size: float = 100,  # Fixed size per trade
         max_position_pct: float = 0.10,  # Max 10% of balance per trade
+        # Realistic simulation settings
+        mode: Optional[TradingMode] = None,
+        latency_ms: int = 0,  # Simulated latency (0 = instant)
+        failure_rate: float = 0.0,  # Execution failure probability (0-1)
+        liquidity_cap_pct: float = 5.0,  # Max % of market liquidity
     ):
         self.initial_balance = initial_balance
         self.balance = initial_balance
         self.position_size = position_size
         self.max_position_pct = max_position_pct
+
+        # Apply preset if mode specified
+        self.mode = mode
+        if mode and mode in PRESETS:
+            settings = PRESETS[mode]
+            self.position_size = settings.position_size
+            self.latency_ms = settings.latency_ms
+            self.failure_rate = settings.failure_rate
+            self.liquidity_cap_pct = settings.liquidity_cap_pct
+        else:
+            self.latency_ms = latency_ms
+            self.failure_rate = failure_rate
+            self.liquidity_cap_pct = liquidity_cap_pct
 
         # State
         self.positions: Dict[str, Position] = {}
@@ -49,19 +69,31 @@ class PaperTradingEngine:
         self.on_trade: Optional[Callable[[Trade], None]] = None
         self.on_position_open: Optional[Callable[[Position], None]] = None
         self.on_position_close: Optional[Callable[[Position], None]] = None
+        self.on_failure: Optional[Callable[[Dict, str], None]] = None  # New: failure callback
 
         # Stats
         self.opportunities_seen = 0
         self.opportunities_executed = 0
         self.opportunities_skipped = 0
+        self.opportunities_failed = 0  # New: failed due to simulation
 
     def execute_opportunity(self, opportunity: Dict) -> bool:
         """
         Execute an arbitrage opportunity (paper trade).
 
-        For PoC: Instant execution, no slippage, always succeeds.
+        Supports realistic simulation:
+        - failure_rate: Random execution failures
+        - latency_ms: Logged for analysis (actual delay not applied in sync mode)
         """
         self.opportunities_seen += 1
+
+        # Simulate execution failure (realistic mode)
+        if self.failure_rate > 0 and random.random() < self.failure_rate:
+            self.opportunities_failed += 1
+            self.opportunities_skipped += 1
+            if self.on_failure:
+                self.on_failure(opportunity, "execution_failed")
+            return False
 
         # Calculate position size
         size = self._calculate_size(opportunity)
@@ -161,8 +193,8 @@ class PaperTradingEngine:
 
         size = self.position_size
 
-        # Cap at available liquidity (5% of market liquidity)
-        liquidity_cap = liquidity * 0.05
+        # Cap at available liquidity (configurable % of market liquidity)
+        liquidity_cap = liquidity * (self.liquidity_cap_pct / 100.0)
         size = min(size, liquidity_cap)
 
         return size
@@ -204,6 +236,33 @@ class PaperTradingEngine:
         winners = [p for p in closed if (p.actual_profit or 0) > 0]
         return len(winners) / len(closed)
 
+    @property
+    def max_drawdown(self) -> float:
+        """Calculate maximum drawdown from trade history"""
+        if not self.trades:
+            return 0.0
+
+        # Simulate balance over time
+        balance = self.initial_balance
+        peak = balance
+        max_dd = 0.0
+
+        for pos in self.positions.values():
+            if pos.status == PositionStatus.CLOSED:
+                balance += pos.actual_profit or 0
+                peak = max(peak, balance)
+                dd = (peak - balance) / peak if peak > 0 else 0
+                max_dd = max(max_dd, dd)
+
+        return max_dd * 100  # Return as percentage
+
+    @property
+    def execution_rate(self) -> float:
+        """Percentage of opportunities that were executed"""
+        if self.opportunities_seen == 0:
+            return 0.0
+        return (self.opportunities_executed / self.opportunities_seen) * 100
+
     def get_status(self) -> Dict:
         """Get current trading status"""
         runtime = (datetime.now() - self.session.start_time).total_seconds()
@@ -214,7 +273,11 @@ class PaperTradingEngine:
         open_positions = [p for p in self.positions.values() if p.status == PositionStatus.OPEN]
         closed_positions = [p for p in self.positions.values() if p.status == PositionStatus.CLOSED]
 
+        # Mode name
+        mode_name = self.mode.value if self.mode else "custom"
+
         return {
+            "mode": mode_name,
             "runtime": f"{hours:02d}:{minutes:02d}:{seconds:02d}",
             "runtime_seconds": runtime,
             "initial_balance": self.initial_balance,
@@ -226,9 +289,16 @@ class PaperTradingEngine:
             "total_pnl": self.total_pnl,
             "return_percent": self.return_percent,
             "win_rate": self.win_rate,
+            "max_drawdown": self.max_drawdown,
+            "execution_rate": self.execution_rate,
             "opportunities_seen": self.opportunities_seen,
             "opportunities_executed": self.opportunities_executed,
             "opportunities_skipped": self.opportunities_skipped,
+            "opportunities_failed": self.opportunities_failed,
+            # Simulation settings
+            "latency_ms": self.latency_ms,
+            "failure_rate": self.failure_rate,
+            "liquidity_cap_pct": self.liquidity_cap_pct,
         }
 
     def print_status(self):
@@ -237,7 +307,8 @@ class PaperTradingEngine:
 
         print()
         print("=" * 64)
-        print("  PAPER TRADING STATUS")
+        mode_str = f" [{s['mode'].upper()}]" if s['mode'] != 'custom' else ""
+        print(f"  PAPER TRADING STATUS{mode_str}")
         print("=" * 64)
         print(f"  Runtime: {s['runtime']}")
         print(f"  Balance: ${s['balance']:,.2f}  (Initial: ${s['initial_balance']:,.2f})")
@@ -247,8 +318,12 @@ class PaperTradingEngine:
         print(f"  Unrealized P&L: ${s['unrealized_pnl']:+,.2f}")
         print(f"  Total P&L:      ${s['total_pnl']:+,.2f} ({s['return_percent']:+.2f}%)")
         print("-" * 64)
-        print(f"  Win Rate: {s['win_rate']*100:.1f}%")
-        print(f"  Opportunities: {s['opportunities_executed']}/{s['opportunities_seen']} executed")
+        print(f"  Win Rate: {s['win_rate']*100:.1f}%  |  Max Drawdown: {s['max_drawdown']:.1f}%")
+        print(f"  Execution Rate: {s['execution_rate']:.1f}%")
+        print(f"  Opportunities: {s['opportunities_executed']}/{s['opportunities_seen']} executed, {s['opportunities_failed']} failed")
+        if s['latency_ms'] > 0 or s['failure_rate'] > 0:
+            print("-" * 64)
+            print(f"  Simulation: latency={s['latency_ms']}ms, failure={s['failure_rate']*100:.0f}%")
         print("=" * 64)
         print()
 

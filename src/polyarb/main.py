@@ -23,7 +23,7 @@ from datetime import datetime
 
 from .config import config
 from .scanner import ArbitrageScanner
-from .paper_trading import PaperTradingEngine
+from .paper_trading import PaperTradingEngine, TradingMode, PRESETS, get_mode_comparison
 
 
 def parse_args():
@@ -46,8 +46,23 @@ Paper-based recommendations:
     # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
+    # Dashboard subcommand
+    dash_parser = subparsers.add_parser("dashboard", help="Web dashboard (NiceGUI)")
+    dash_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port for dashboard (default: 8080)",
+    )
+
     # Paper trading subcommand
     paper_parser = subparsers.add_parser("paper", help="Paper trading mode")
+    paper_parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["conservative", "moderate", "aggressive"],
+        help="Preset trading mode (overrides other settings)",
+    )
     paper_parser.add_argument(
         "--balance",
         type=float,
@@ -69,14 +84,26 @@ Paper-based recommendations:
     paper_parser.add_argument(
         "--min-profit",
         type=float,
-        default=config.arbitrage.min_profit_percent,
+        default=None,
         help=f"Minimum profit %% (default: {config.arbitrage.min_profit_percent})",
     )
     paper_parser.add_argument(
         "--min-liquidity",
         type=float,
-        default=config.arbitrage.min_liquidity,
+        default=None,
         help=f"Minimum liquidity $ (default: {config.arbitrage.min_liquidity})",
+    )
+    paper_parser.add_argument(
+        "--failure-rate",
+        type=float,
+        default=0.0,
+        help="Simulated execution failure rate 0-1 (default: 0)",
+    )
+    paper_parser.add_argument(
+        "--latency",
+        type=int,
+        default=0,
+        help="Simulated latency in ms (default: 0)",
     )
 
     # Main scanner arguments
@@ -124,14 +151,36 @@ async def run_paper_trading(args):
     from .api.websocket import RealtimeArbitrageDetector
     from .models import MarketType
 
+    # Determine mode and settings
+    mode = None
+    if args.mode:
+        mode = TradingMode(args.mode)
+        settings = PRESETS[mode]
+        min_profit = args.min_profit or settings.min_profit
+        min_liquidity = args.min_liquidity or settings.min_liquidity
+        position_size = settings.position_size
+        failure_rate = settings.failure_rate
+        latency_ms = settings.latency_ms
+    else:
+        min_profit = args.min_profit or config.arbitrage.min_profit_percent
+        min_liquidity = args.min_liquidity or config.arbitrage.min_liquidity
+        position_size = args.size
+        failure_rate = args.failure_rate
+        latency_ms = args.latency
+
     print()
     print("=" * 64)
-    print("  PAPER TRADING MODE (PoC)")
+    if mode:
+        print(f"  PAPER TRADING MODE [{mode.value.upper()}]")
+    else:
+        print("  PAPER TRADING MODE (Custom)")
     print("=" * 64)
     print(f"  Initial Balance: ${args.balance:,.2f}")
-    print(f"  Position Size: ${args.size:,.2f}")
-    print(f"  Min Profit: {args.min_profit}%")
-    print(f"  Min Liquidity: ${args.min_liquidity:,.0f}")
+    print(f"  Position Size: ${position_size:,.2f}")
+    print(f"  Min Profit: {min_profit}%")
+    print(f"  Min Liquidity: ${min_liquidity:,.0f}")
+    if failure_rate > 0 or latency_ms > 0:
+        print(f"  Simulation: failure={failure_rate*100:.0f}%, latency={latency_ms}ms")
     if args.duration > 0:
         print(f"  Duration: {args.duration}s")
     print("=" * 64)
@@ -140,13 +189,16 @@ async def run_paper_trading(args):
     # Initialize paper trading engine
     engine = PaperTradingEngine(
         initial_balance=args.balance,
-        position_size=args.size,
+        position_size=position_size,
+        mode=mode,
+        failure_rate=failure_rate,
+        latency_ms=latency_ms,
     )
 
     # Initialize detector
     detector = RealtimeArbitrageDetector(
-        min_profit_percent=args.min_profit,
-        min_liquidity=args.min_liquidity,
+        min_profit_percent=min_profit,
+        min_liquidity=min_liquidity,
     )
 
     # Connect engine to detector
@@ -250,6 +302,12 @@ async def run_paper_trading(args):
 
 async def main_async():
     args = parse_args()
+
+    # Dashboard mode
+    if args.command == "dashboard":
+        from .dashboard import run_dashboard
+        run_dashboard(port=args.port)
+        return
 
     # Paper trading mode
     if args.command == "paper":
