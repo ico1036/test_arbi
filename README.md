@@ -1,11 +1,12 @@
-# Polymarket Arbitrage Bot v3.1
+# Polymarket Arbitrage Bot v3.2
 
 ## Quick Start (30초)
 
 ```bash
 uv sync                              # 설치
 uv run python -m polyarb             # 실시간 스캔 (WebSocket)
-uv run pytest                        # 테스트 (48개)
+uv run python -m polyarb paper       # 페이퍼 트레이딩 모드
+uv run pytest                        # 테스트 (76개)
 ```
 
 **출력 예시:**
@@ -58,6 +59,7 @@ A승 YES $0.20 + B승 YES $0.18 + C승 YES $0.17 + ... = $0.88 → 12% 수익
 
 ## CLI 옵션
 
+### 실시간 스캔 모드
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
 | `--min-profit` | 1.0 | 최소 수익률 % |
@@ -65,6 +67,19 @@ A승 YES $0.20 + B승 YES $0.18 + C승 YES $0.17 + ... = $0.88 → 12% 수익
 | `--max-markets` | 500 | 모니터링할 최대 마켓 수 |
 | `--no-alerts` | - | 알림 비활성화 |
 | `--no-log` | - | CSV 로깅 비활성화 |
+
+### 페이퍼 트레이딩 모드
+```bash
+uv run python -m polyarb paper --balance 10000 --size 100
+```
+
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `--balance` | 10000 | 초기 가상 잔고 $ |
+| `--size` | 100 | 트레이드당 포지션 사이즈 $ |
+| `--duration` | 0 | 실행 시간 (초, 0=무제한) |
+| `--min-profit` | 1.0 | 최소 수익률 % |
+| `--min-liquidity` | 1000 | 최소 유동성 $ |
 
 ## 알림 설정 (.env)
 
@@ -76,4 +91,4 @@ TELEGRAM_CHAT_ID=123456789
 
 ---
 
-*v3.1 - WebSocket 실시간 감지 (<100ms), 48 tests passing*
+*v3.2 - Paper Trading PoC 추가, 76 tests passing*

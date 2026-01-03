@@ -2,7 +2,7 @@
 
 ## 🎯 Project Overview
 
-This is a **Polymarket Arbitrage Detection System v3.1** - a real-time WebSocket-based trading tool designed to identify risk-free arbitrage opportunities in prediction markets.
+This is a **Polymarket Arbitrage Detection System v3.2** - a real-time WebSocket-based trading tool designed to identify risk-free arbitrage opportunities in prediction markets.
 
 **Based on academic paper findings:**
 - NegRisk Arbitrage: $29M extracted (largest source)
@@ -60,21 +60,26 @@ Example (5 candidates):
 
 ```
 polymarket_arbi/
-├── src/polyarb/                     # v3.1 - WebSocket real-time (<100ms detection)
+├── src/polyarb/                     # v3.2 - WebSocket + Paper Trading
 │   ├── api/
 │   │   ├── gamma.py                 # Market/event discovery (REST)
 │   │   ├── clob.py                  # Price/orderbook (REST for init)
 │   │   └── websocket.py             # Real-time streaming + RealtimeArbitrageDetector
+│   ├── paper_trading/               # Paper Trading PoC
+│   │   ├── __init__.py              # Module exports
+│   │   ├── models.py                # Position, Trade, TradingSession
+│   │   └── engine.py                # PaperTradingEngine
 │   ├── scanner.py                   # WebSocket-based scanner (run method only)
 │   ├── alerts.py                    # Discord/Telegram
 │   ├── models.py                    # Data models
 │   ├── config.py                    # Configuration
-│   └── main.py                      # CLI entry point
+│   └── main.py                      # CLI entry point (paper subcommand)
 │
-├── tests/                           # Test suite (48 tests)
+├── tests/                           # Test suite (76 tests)
 │   ├── conftest.py                  # Minimal fixtures
 │   ├── test_models.py               # Data model tests (21 tests)
-│   └── test_websocket_detection.py  # WebSocket detection tests (27 tests)
+│   ├── test_websocket_detection.py  # WebSocket detection tests (27 tests)
+│   └── test_paper_trading.py        # Paper trading tests (28 tests)
 │
 ├── README.md                        # Documentation
 ├── CLAUDE.md                        # This file - AI context
@@ -91,7 +96,8 @@ polymarket_arbi/
 | v1.0 | Sync REST | ~5 min/scan | Basic detection |
 | v2.0 | Sync REST | ~5 min/scan | + Alerts, logging |
 | v3.0 | Async REST | ~15 sec/scan | + NegRisk, depth analysis |
-| **v3.1** | **WebSocket** | **<100ms** | Real-time streaming |
+| v3.1 | WebSocket | <100ms | Real-time streaming |
+| **v3.2** | **WebSocket** | **<100ms** | + Paper Trading PoC |
 
 ---
 
@@ -281,6 +287,47 @@ For theoretical discussions about arbitrage strategies, use the `/arb-advisor` c
 
 ---
 
+## 🧪 Testing Principles
+
+### Core Philosophy
+**테스트는 클라이언트 관점에서 "이걸 기대하면 이게 나와야 한다"를 검증한다.**
+
+### Rules
+
+1. **테스트 실패 시 코드를 의심하라**
+   - 테스트가 실패하면 테스트를 수정하지 말고, 코드가 기대와 맞는지 먼저 확인
+   - 예: "잔고 $50인데 $100 거래하면 거절해야 한다" → 테스트가 맞고 코드가 틀린 것
+
+2. **Mock 최소화**
+   - 실제 동작을 테스트하라
+   - Mock은 외부 의존성(API 호출 등)에만 사용
+
+3. **엣지케이스 커버**
+   - 경계 조건, 예외 상황을 반드시 테스트
+   - 예: 잔고 0, 유동성 0, 빈 리스트 등
+
+4. **쓸모없는 테스트 금지**
+   - getter/setter 단순 테스트 불필요
+   - 의미 있는 비즈니스 로직만 테스트
+
+### Example
+
+```python
+# ❌ Bad: 테스트를 코드에 맞춤
+def test_insufficient_balance(self):
+    # "어차피 max_position_pct로 줄어드니까 통과하겠지"
+    ...
+
+# ✅ Good: 코드를 기대에 맞춤
+def test_insufficient_balance(self):
+    """잔고 $50인데 $100 거래 요청하면 거절해야 한다"""
+    engine = PaperTradingEngine(initial_balance=50, position_size=100)
+    success = engine.execute_opportunity(opportunity)
+    assert success is False  # 이게 실패하면 코드가 틀린 것
+```
+
+---
+
 *Last updated: 2025-01-03*
-*v3.1 - WebSocket-only architecture with <100ms detection latency*
+*v3.2 - Paper Trading PoC added*
 *Strategy Advisor: `.claude/commands/arb-advisor.md`*

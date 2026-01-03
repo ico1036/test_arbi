@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Polymarket Arbitrage Bot v3.1
+Polymarket Arbitrage Bot v3.2
 =============================
 Real-time WebSocket-based arbitrage detection for Polymarket.
 
@@ -8,28 +8,33 @@ Features:
 - WebSocket streaming for <100ms detection latency
 - Binary (YES/NO) and NegRisk (multi-outcome) arbitrage
 - Discord/Telegram alerts
+- Paper trading mode for strategy validation
 
 Usage:
     python -m polyarb                          # Real-time scanning
     python -m polyarb --min-profit 3.0         # 3%+ opportunities only
-    python -m polyarb --min-liquidity 10000    # $10K+ liquidity only
+    python -m polyarb paper --balance 10000    # Paper trading mode
 """
 import argparse
 import asyncio
+import json
 import sys
+from datetime import datetime
 
 from .config import config
 from .scanner import ArbitrageScanner
+from .paper_trading import PaperTradingEngine
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Polymarket Arbitrage Scanner v3.1 (WebSocket)",
+        description="Polymarket Arbitrage Scanner v3.2 (WebSocket)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     python -m polyarb                          # Real-time scanning
     python -m polyarb --min-profit 2 --min-liquidity 5000
+    python -m polyarb paper --balance 10000    # Paper trading
 
 Paper-based recommendations:
     - Sports markets: Higher frequency of opportunities
@@ -38,6 +43,43 @@ Paper-based recommendations:
         """,
     )
 
+    # Subcommands
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+    # Paper trading subcommand
+    paper_parser = subparsers.add_parser("paper", help="Paper trading mode")
+    paper_parser.add_argument(
+        "--balance",
+        type=float,
+        default=10000,
+        help="Initial virtual balance (default: 10000)",
+    )
+    paper_parser.add_argument(
+        "--size",
+        type=float,
+        default=100,
+        help="Position size per trade (default: 100)",
+    )
+    paper_parser.add_argument(
+        "--duration",
+        type=int,
+        default=0,
+        help="Duration in seconds (0 = unlimited, default: 0)",
+    )
+    paper_parser.add_argument(
+        "--min-profit",
+        type=float,
+        default=config.arbitrage.min_profit_percent,
+        help=f"Minimum profit %% (default: {config.arbitrage.min_profit_percent})",
+    )
+    paper_parser.add_argument(
+        "--min-liquidity",
+        type=float,
+        default=config.arbitrage.min_liquidity,
+        help=f"Minimum liquidity $ (default: {config.arbitrage.min_liquidity})",
+    )
+
+    # Main scanner arguments
     parser.add_argument(
         "--min-profit",
         type=float,
@@ -75,8 +117,144 @@ Paper-based recommendations:
     return parser.parse_args()
 
 
+async def run_paper_trading(args):
+    """Run paper trading mode"""
+    from .api.gamma import GammaClient
+    from .api.clob import CLOBClient
+    from .api.websocket import RealtimeArbitrageDetector
+    from .models import MarketType
+
+    print()
+    print("=" * 64)
+    print("  PAPER TRADING MODE (PoC)")
+    print("=" * 64)
+    print(f"  Initial Balance: ${args.balance:,.2f}")
+    print(f"  Position Size: ${args.size:,.2f}")
+    print(f"  Min Profit: {args.min_profit}%")
+    print(f"  Min Liquidity: ${args.min_liquidity:,.0f}")
+    if args.duration > 0:
+        print(f"  Duration: {args.duration}s")
+    print("=" * 64)
+    print()
+
+    # Initialize paper trading engine
+    engine = PaperTradingEngine(
+        initial_balance=args.balance,
+        position_size=args.size,
+    )
+
+    # Initialize detector
+    detector = RealtimeArbitrageDetector(
+        min_profit_percent=args.min_profit,
+        min_liquidity=args.min_liquidity,
+    )
+
+    # Connect engine to detector
+    def on_opportunity(opp):
+        success = engine.execute_opportunity(opp)
+        if success:
+            arb_type = opp.get("type", "")
+            profit_pct = opp.get("profit_percent", 0)
+            question = opp.get("question", opp.get("title", ""))[:40]
+            print(f"  [TRADE] {arb_type} | {profit_pct:.2f}% | {question}...")
+            engine.print_status()
+
+    detector.on_opportunity = on_opportunity
+
+    # Fetch markets and register
+    print("Fetching markets...")
+    async with GammaClient() as gamma, CLOBClient() as clob:
+        markets = await gamma.get_all_markets(limit=500)
+        binary_markets = [m for m in markets if m.market_type == MarketType.BINARY]
+        events = await gamma.get_negrisk_events(limit=100)
+
+        print(f"  Binary markets: {len(binary_markets)}")
+        print(f"  NegRisk events: {len(events)}")
+
+        # Get prices for binary markets
+        all_token_ids = []
+        for market in binary_markets[:200]:
+            if len(market.tokens) == 2:
+                all_token_ids.extend([market.tokens[0].token_id, market.tokens[1].token_id])
+
+        print(f"  Fetching prices for {len(all_token_ids)} tokens...")
+        all_asks = await clob.get_prices_batch(all_token_ids, side='buy')
+        all_bids = await clob.get_prices_batch(all_token_ids, side='sell')
+
+        # Register binary markets
+        for market in binary_markets[:200]:
+            if len(market.tokens) != 2:
+                continue
+            yes_token = market.tokens[0]
+            no_token = market.tokens[1]
+
+            detector.register_binary_market(
+                market_id=market.market_id,
+                question=market.question,
+                slug=market.slug,
+                liquidity=market.liquidity,
+                category=market.category,
+                yes_token_id=yes_token.token_id,
+                no_token_id=no_token.token_id,
+                yes_ask=all_asks.get(yes_token.token_id),
+                no_ask=all_asks.get(no_token.token_id),
+                yes_bid=all_bids.get(yes_token.token_id),
+                no_bid=all_bids.get(no_token.token_id),
+            )
+
+        print(f"\n  Registered {len(detector.binary_markets)} markets")
+        print()
+
+        # Initial scan for existing opportunities
+        print("Scanning for initial opportunities...")
+        initial_count = 0
+        for state in detector.binary_markets.values():
+            opp = state.check_underpriced(args.min_profit)
+            if opp:
+                engine.execute_opportunity(opp)
+                initial_count += 1
+            opp = state.check_overpriced(args.min_profit)
+            if opp:
+                engine.execute_opportunity(opp)
+                initial_count += 1
+
+        print(f"  Found {initial_count} initial opportunities")
+        engine.print_status()
+
+        # If duration specified, run for that time
+        if args.duration > 0:
+            print(f"\nRunning for {args.duration} seconds...")
+            await asyncio.sleep(args.duration)
+        else:
+            print("\nPress Ctrl+C to stop and see summary...")
+            try:
+                while True:
+                    await asyncio.sleep(60)
+                    engine.print_status()
+            except asyncio.CancelledError:
+                pass
+
+    # Print final summary
+    print("\n" + "=" * 64)
+    print("  PAPER TRADING SESSION COMPLETE")
+    print("=" * 64)
+    engine.print_status()
+
+    # Save summary
+    summary = engine.get_summary()
+    filename = f"paper_trading_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(filename, 'w') as f:
+        json.dump(summary, f, indent=2)
+    print(f"\n  Summary saved to: {filename}")
+
+
 async def main_async():
     args = parse_args()
+
+    # Paper trading mode
+    if args.command == "paper":
+        await run_paper_trading(args)
+        return
 
     # Update config
     config.arbitrage.max_markets = args.max_markets
@@ -99,7 +277,8 @@ def main():
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
+        print("\n\n  Session interrupted by user")
+        print("  Goodbye!")
         sys.exit(0)
 
 
