@@ -249,16 +249,26 @@ async def run_paper_trading(args):
         print()
 
         # Initial scan for existing opportunities
+        # Note: A market can be both underpriced (ask) and overpriced (bid) due to spread.
+        # We pick the better opportunity (higher profit %).
         print("Scanning for initial opportunities...")
         initial_count = 0
         for state in detector.binary_markets.values():
-            opp = state.check_underpriced(min_profit)
-            if opp:
-                engine.execute_opportunity(opp)
+            under = state.check_underpriced(min_profit)
+            over = state.check_overpriced(min_profit)
+
+            # Pick the better one if both exist
+            if under and over:
+                if under["profit_percent"] >= over["profit_percent"]:
+                    engine.execute_opportunity(under)
+                else:
+                    engine.execute_opportunity(over)
                 initial_count += 1
-            opp = state.check_overpriced(min_profit)
-            if opp:
-                engine.execute_opportunity(opp)
+            elif under:
+                engine.execute_opportunity(under)
+                initial_count += 1
+            elif over:
+                engine.execute_opportunity(over)
                 initial_count += 1
 
         print(f"  Found {initial_count} initial opportunities")
