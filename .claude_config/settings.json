@@ -11,9 +11,22 @@
         "uv pip *",
         "pytest *",
         "pip *",
-        "pip3 *"
+        "pip3 *",
+        "curl *",
+        "git *",
+        "ls *",
+        "mkdir *",
+        "cat *",
+        "head *",
+        "tail *"
       ]
     }
   ],
-  "description": "Allow Python and uv commands without user approval for Polymarket Arbitrage Bot project"
+  "allowed_tools": [
+    "mcp__context7__*",
+    "mcp__server-sequential-thinking__*",
+    "mcp__playwright__*",
+    "mcp__chrome-devtools__*"
+  ],
+  "description": "Allow Python, uv, git, and MCP tools without user approval for Polymarket Alpha Research Automation project"
 }
